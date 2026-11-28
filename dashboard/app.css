@@ -1,17 +1,17 @@
-/* Token Radar's plain theme. The five palette values, two radii and two families are the whole style;
-   everything else is spacing, a hairline and a type step. */
+/* Titan Token Radar - Bespoke Theme by @tuanpham3080 */
 :root {
-  --canvas: #f2f5f3;
+  --canvas: #f0f4f2;
   --surface: #ffffff;
-  --ink: #16211c;
-  --muted: #5f6f67;
-  --border: #d8e2dc;
-  --accent: #0f7a5a;
-  --negative: #b23b2e;
-  --radius-control: 8px;
-  --radius-panel: 14px;
-  --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-num: ui-monospace, "SF Mono", Menlo, monospace;
+  --ink: #0f1c16;
+  --muted: #4e6358;
+  --border: #cedad2;
+  --accent: #059669;
+  --accent-glow: rgba(5, 150, 105, 0.15);
+  --negative: #dc2626;
+  --radius-control: 10px;
+  --radius-panel: 16px;
+  --font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-num: ui-monospace, "SF Mono", "Roboto Mono", Menlo, monospace;
   --step-1: 4px;
   --step-2: 8px;
   --step-3: 12px;

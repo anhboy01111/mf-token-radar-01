@@ -53,18 +53,18 @@ export interface ModelConstants {
 }
 
 export const MODEL: ModelConstants = {
-  base_multiple: 0.25,
-  growth_weight: 0.5,
+  base_multiple: 0.28,
+  growth_weight: 0.52,
   growth_floor: -60,
   growth_cap: 120,
-  maturity_floor: 0.6,
-  maturity_range: 0.4,
+  maturity_floor: 0.62,
+  maturity_range: 0.38,
   maturity_days: 1095,
   unknown_age_days: 365,
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-1';
+export const MODEL_VERSION = 'radar-titan-v2';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 160;
