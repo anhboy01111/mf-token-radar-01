@@ -612,4 +612,103 @@ export function verifyTitanEcosystemCoherence(board: BoardRow[]): { verified: bo
   };
 }
 
+/**
+ * Staking and Yield Generation Analytics
+ * Simulates yield generation potential under varying TVL utilization rates.
+ */
+export interface StakingYieldProjection {
+  slug: string;
+  base_apr_estimate: number;
+  incentivized_apr_estimate: number;
+  lockup_duration_days: number;
+  capital_efficiency_index: number;
+}
+
+export function computeStakingYieldProjection(row: BoardRow): StakingYieldProjection {
+  const tvl = row.tvl_usd;
+  const growth = row.change_7d ?? 0;
+  let baseApr = 4.5;
+
+  if (row.category?.toLowerCase().includes('lend')) {
+    baseApr = 6.2;
+  } else if (row.category?.toLowerCase().includes('dex')) {
+    baseApr = 14.8;
+  } else if (row.category?.toLowerCase().includes('derivative')) {
+    baseApr = 18.5;
+  }
+
+  const bonusApr = growth > 0 ? Math.min(25, growth * 0.4) : 0;
+  const efficiency = tvl > 500_000_000 ? 0.92 : tvl > 50_000_000 ? 0.85 : 0.72;
+
+  return {
+    slug: row.slug,
+    base_apr_estimate: Number(baseApr.toFixed(2)),
+    incentivized_apr_estimate: Number((baseApr + bonusApr).toFixed(2)),
+    lockup_duration_days: row.age_days && row.age_days > 365 ? 90 : 30,
+    capital_efficiency_index: Number(efficiency.toFixed(2)),
+  };
+}
+
+/**
+ * Cross-Chain Liquidity Routing Engine
+ * Identifies optimal gateway chains for farming actions.
+ */
+export interface MultiChainBridgeRouting {
+  slug: string;
+  primary_gateway_chain: string;
+  supported_chain_count: number;
+  gas_overhead_estimate_usd: number;
+  recommended_bridge_protocol: string;
+}
+
+export function analyzeBridgeRouting(row: BoardRow): MultiChainBridgeRouting {
+  const chains = row.chains;
+  const primary = chains.length > 0 ? chains[0]! : 'Ethereum';
+  let gasCost = 15.0;
+
+  if (['Solana', 'Arbitrum', 'Base', 'Polygon', 'Optimism'].includes(primary)) {
+    gasCost = 0.25;
+  } else if (primary === 'BSC' || primary === 'Avalanche') {
+    gasCost = 1.2;
+  }
+
+  return {
+    slug: row.slug,
+    primary_gateway_chain: primary,
+    supported_chain_count: chains.length,
+    gas_overhead_estimate_usd: gasCost,
+    recommended_bridge_protocol: chains.length > 1 ? 'Wormhole / Stargate' : 'Direct L1 Gateway',
+  };
+}
+
+/**
+ * Governance and Tokenomics Forecast Model
+ * Generates initial float, community allocation and FDV projections.
+ */
+export interface TokenomicsForecast {
+  slug: string;
+  projected_circulating_supply_pct: number;
+  airdrop_pool_allocation_pct: number;
+  estimated_initial_fdv_usd: number;
+  vesting_cliff_months: number;
+}
+
+export function projectTokenomics(row: BoardRow): TokenomicsForecast {
+  const impliedVal = row.implied_value_usd;
+  const age = row.age_days ?? 365;
+
+  const airdropPct = age > 500 ? 12.5 : 8.0;
+  const initialFloat = 15.0 + (row.tvl_usd > 100_000_000 ? 5.0 : 0.0);
+  const fdvEstimate = Math.round(impliedVal * 1.15);
+
+  return {
+    slug: row.slug,
+    projected_circulating_supply_pct: initialFloat,
+    airdrop_pool_allocation_pct: airdropPct,
+    estimated_initial_fdv_usd: fdvEstimate,
+    vesting_cliff_months: age > 365 ? 6 : 12,
+  };
+}
+
+
 
