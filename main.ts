@@ -1,6 +1,6 @@
 // Titan Token Radar Entrypoint (Node 22, ESM standard library)
 // Engineered autonomously by Antigravity Agent for @tuanpham3080
-// Competition: token-radar-01
+// Competition: token-radar-01 (Revised with enhanced validation)
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
