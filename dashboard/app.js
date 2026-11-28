@@ -279,6 +279,31 @@
     );
   }
 
+  function sectorBreakdownPanel() {
+    var categoryTotals = {};
+    DATA.rows.forEach(function (r) {
+      var cat = r.category || 'Other';
+      if (!categoryTotals[cat]) categoryTotals[cat] = { count: 0, tvl: 0, implied: 0 };
+      categoryTotals[cat].count += 1;
+      categoryTotals[cat].tvl += r.tvl_usd;
+      categoryTotals[cat].implied += r.implied_value_usd;
+    });
+
+    var cards = Object.keys(categoryTotals).map(function (cat) {
+      var info = categoryTotals[cat];
+      return el('div', { class: 'fact', style: 'padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-control);' },
+        el('div', null, el('b', { text: cat }), el('div', { class: 'sub', text: info.count + ' protocols' })),
+        el('div', { style: 'text-align: right;' }, el('div', { class: 'num', text: fmtUsd(info.implied) }), el('div', { class: 'sub', text: 'TVL ' + fmtUsd(info.tvl) }))
+      );
+    });
+
+    return el('section', { class: 'panel', style: 'padding: 24px; margin-top: 24px;' },
+      el('h2', { text: 'DeFi Sector Implied Capital Distribution' }),
+      el('p', { class: 'sub', style: 'margin-bottom: 16px;', text: 'Aggregate implied valuation grouped across decentralized finance protocols without a native token.' }),
+      el('div', { style: 'display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px;' }, cards)
+    );
+  }
+
   function modelPanel() {
     var m = DATA.model;
     return el('section', { class: 'panel model' },
@@ -344,7 +369,10 @@
     shell.appendChild(lede());
     shell.appendChild(controls());
     shell.appendChild(state.tab === 'pre-token' ? boardTable() : liveTable());
-    if (state.tab === 'pre-token') shell.appendChild(modelPanel());
+    if (state.tab === 'pre-token') {
+      shell.appendChild(modelPanel());
+      shell.appendChild(sectorBreakdownPanel());
+    }
     app.appendChild(shell);
     app.setAttribute('aria-busy', 'false');
     if (!dialog.isConnected) app.appendChild(dialog);
