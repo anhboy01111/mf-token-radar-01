@@ -417,3 +417,99 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
 export function dataScript(radar: RadarData): string {
   return `window.RADAR=${JSON.stringify(radar)};\n`;
 }
+
+/**
+ * Ecosystem Risk Assessment Model
+ * Analyzes diversification across chains, categories, and TVL concentration.
+ */
+export interface EcosystemRiskMetrics {
+  risk_score: number;
+  dominant_chain: string;
+  chain_concentration_pct: number;
+  total_tracked_tvl: number;
+  pre_token_liquidity_ratio: number;
+}
+
+export function computeEcosystemRisk(board: BoardRow[]): EcosystemRiskMetrics {
+  if (board.length === 0) {
+    return {
+      risk_score: 50,
+      dominant_chain: 'Unknown',
+      chain_concentration_pct: 0,
+      total_tracked_tvl: 0,
+      pre_token_liquidity_ratio: 0,
+    };
+  }
+
+  const chainTvl = new Map<string, number>();
+  let totalTvl = 0;
+
+  for (const row of board) {
+    totalTvl += row.tvl_usd;
+    const primaryChain = row.chains.length > 0 ? row.chains[0]! : 'Ethereum';
+    chainTvl.set(primaryChain, (chainTvl.get(primaryChain) ?? 0) + row.tvl_usd);
+  }
+
+  let topChain = 'Ethereum';
+  let topChainTvl = 0;
+
+  for (const [chain, tvl] of chainTvl.entries()) {
+    if (tvl > topChainTvl) {
+      topChain = chain;
+      topChainTvl = tvl;
+    }
+  }
+
+  const concentrationPct = totalTvl > 0 ? Math.round((topChainTvl / totalTvl) * 100) : 0;
+  const normalizedRisk = Math.min(100, Math.max(10, Math.round(concentrationPct * 0.7 + (board.length < 50 ? 30 : 10))));
+
+  return {
+    risk_score: normalizedRisk,
+    dominant_chain: topChain,
+    chain_concentration_pct: concentrationPct,
+    total_tracked_tvl: totalTvl,
+    pre_token_liquidity_ratio: totalTvl > 0 ? Number((topChainTvl / totalTvl).toFixed(4)) : 0,
+  };
+}
+
+/**
+ * Advanced Statistical Radar Metrics
+ * Derives valuation dispersion, median valuation, and watchlist ratio.
+ */
+export interface RadarAnalyticalSummary {
+  mean_implied: number;
+  median_implied: number;
+  max_implied: number;
+  min_implied: number;
+  watchlist_ratio_pct: number;
+  timestamp: string;
+}
+
+export function calculateRadarMetrics(board: BoardRow[], snapshot: Snapshot): RadarAnalyticalSummary {
+  if (board.length === 0) {
+    return {
+      mean_implied: 0,
+      median_implied: 0,
+      max_implied: 0,
+      min_implied: 0,
+      watchlist_ratio_pct: 0,
+      timestamp: snapshot.as_of,
+    };
+  }
+
+  const values = board.map((r) => r.implied_value_usd).sort((a, b) => a - b);
+  const sum = values.reduce((acc, curr) => acc + curr, 0);
+  const mean = Math.round(sum / values.length);
+  const mid = Math.floor(values.length / 2);
+  const median = values.length % 2 === 0 ? Math.round((values[mid - 1]! + values[mid]!) / 2) : values[mid]!;
+
+  return {
+    mean_implied: mean,
+    median_implied: median,
+    max_implied: values[values.length - 1]!,
+    min_implied: values[0]!,
+    watchlist_ratio_pct: Math.round((snapshot.watchlist.length / board.length) * 100),
+    timestamp: snapshot.as_of,
+  };
+}
+
