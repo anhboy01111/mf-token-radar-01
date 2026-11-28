@@ -1,6 +1,23 @@
 // The token radar's model: one snapshot of the protocol universe in, one ranked board out.
-// Refined and authored by Antigravity Agent for @tuanpham3080
+//
+// The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and may add
+// pre-token protocols below the watchlist floor: the early rows the radar exists to find. A protocol is
+// pre-token when its index entry records no token (no market cap, no CoinGecko id, no symbol); the
+// snapshot's live-token protocols are kept apart and shown as the market's own values, never mixed into
+// the ranked board.
+//
+// Implied value follows only from the snapshot's own figures:
+//
+//   base       = tvl_usd x BASE_MULTIPLE
+//   growth     = clamp(change_7d, -60, 120) per cent
+//   growthMult = 1 + (growth / 100) x GROWTH_WEIGHT
+//   maturity   = 0.6 + min(age_days, 1095) / 1095 x 0.4   (age_days unknown: 365)
+//   implied    = max(1, round(base x growthMult x maturity))
+//
+// The constants are the house model's, stated in the dashboard and changeable in the model sandbox. No
+// protocol name is ever special-cased: the same function scores every row.
 
+/** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
   slug: string;
   name: string;
@@ -14,6 +31,7 @@ export interface SnapshotProtocol {
   symbol: string | null;
 }
 
+/** The whole snapshot document. */
 export interface Snapshot {
   as_of: string;
   source: string;
@@ -22,6 +40,7 @@ export interface Snapshot {
   watchlist: string[];
 }
 
+/** The model's constants, as the dashboard states them and the sandbox may change them. */
 export interface ModelConstants {
   base_multiple: number;
   growth_weight: number;
@@ -34,26 +53,33 @@ export interface ModelConstants {
 }
 
 export const MODEL: ModelConstants = {
-  base_multiple: 0.28,
-  growth_weight: 0.52,
+  base_multiple: 0.25,
+  growth_weight: 0.5,
   growth_floor: -60,
   growth_cap: 120,
-  maturity_floor: 0.62,
-  maturity_range: 0.38,
+  maturity_floor: 0.6,
+  maturity_range: 0.4,
   maturity_days: 1095,
   unknown_age_days: 365,
 };
 
-export const MODEL_VERSION = 'radar-titan-v2';
+/** The model's version label: the dashboard names it and the rules quote it. */
+export const MODEL_VERSION = 'radar-1';
+
+/** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 160;
+
+/** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
 
+/** A farm step: the action, what it costs, and how long it takes. */
 export interface FarmStep {
   text: string;
   cost: string;
   time: string;
 }
 
+/** One row of board.json: the ranked board's row. */
 export interface BoardRow {
   rank: number;
   slug: string;
@@ -79,6 +105,7 @@ export interface BoardRow {
   farm_steps: string[];
 }
 
+/** The dashboard's compact view of one row, with farm plans generated in the page. */
 export interface RadarRow {
   rank: number;
   slug: string;
@@ -95,6 +122,7 @@ export interface RadarRow {
   maturity_multiplier: number;
 }
 
+/** A live-token protocol: it already trades, so the board shows the market's own value, not a model's. */
 export interface LiveRow {
   slug: string;
   name: string;
@@ -105,6 +133,7 @@ export interface LiveRow {
   change_7d: number | null;
 }
 
+/** Everything the dashboard needs: the board, the live set, and the model it runs. */
 export interface RadarData {
   as_of: string;
   source: string;
@@ -119,6 +148,7 @@ export interface RadarData {
   live: LiveRow[];
 }
 
+/** Why the snapshot is not one this model can score. */
 export class SnapshotError extends Error {
   constructor(message: string) {
     super(message);
@@ -128,10 +158,12 @@ export class SnapshotError extends Error {
 
 const DAY_MS = 86_400_000;
 
+/** A finite number, else `fallback`. */
 function finite(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+/** A whole day count from `from` to `to`, clamped at zero; null when either date is absent or bad. */
 export function ageDays(asOf: string, listedAt: string | null): number | null {
   if (listedAt === null) return null;
   const a = Date.parse(`${asOf}T00:00:00Z`);
@@ -140,6 +172,7 @@ export function ageDays(asOf: string, listedAt: string | null): number | null {
   return Math.max(0, Math.floor((a - b) / DAY_MS));
 }
 
+/** The three multipliers and the implied value one protocol gets under `model`. */
 export function impliedValue(protocol: SnapshotProtocol, asOf: string, model: ModelConstants): { implied: number; growthPct: number; growthMult: number; maturityMult: number; age: number | null } {
   const age = ageDays(asOf, protocol.listed_at);
   const rawGrowth = finite(protocol.change_7d, 0);
@@ -152,20 +185,25 @@ export function impliedValue(protocol: SnapshotProtocol, asOf: string, model: Mo
   return { implied, growthPct, growthMult, maturityMult, age };
 }
 
+/** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
 const VERSIONED = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
 
+/** Whether a protocol records no token at all. */
 export function isPreToken(p: SnapshotProtocol): boolean {
   return p.mcap_usd === null && p.gecko_id === null && p.symbol === null;
 }
 
+/** Whether a protocol is one the board may rank: pre-token, not an exchange, not a versioned pool. */
 export function isRankable(p: SnapshotProtocol): boolean {
   return isPreToken(p) && p.category !== 'CEX' && !VERSIONED.test(p.name);
 }
 
+/** The snapshot's protocol by slug. */
 function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
   return new Map(protocols.map((p) => [p.slug, p]));
 }
 
+/** The headline sentence's figures: how many watchlist slugs, how many rows, how many live protocols. */
 export interface BoardSummary {
   watchlist_size: number;
   board_size: number;
@@ -173,13 +211,18 @@ export interface BoardSummary {
   live_size: number;
 }
 
+/** The protocols the board ranks, strongest first, with ranks 1..n. */
 export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): BoardRow[] {
   const index = bySlug(snapshot.protocols);
   const chosen = new Map<string, SnapshotProtocol>();
+  // The watchlist is the floor: every slug, even one the snapshot no longer carries (it cannot, but the
+  // board's coverage is the gate's row and is never gambled on a missing record).
   for (const slug of snapshot.watchlist) {
     const p = index.get(slug);
     if (p !== undefined) chosen.set(slug, p);
   }
+  // The early radar: pre-token protocols below the watchlist floor, by TVL, capped. Never a replacement
+  // for a watchlist row: a chosen protocol stays chosen.
   const early = snapshot.protocols
     .filter((p) => !chosen.has(p.slug) && isRankable(p) && p.tvl_usd < snapshot.floor_usd)
     .sort((a, b) => b.tvl_usd - a.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0))
@@ -219,6 +262,7 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
 
 const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 
+/** A step as one string: its action, then its cost and time, within the gate's 20..600 characters. */
 export function stepText(step: FarmStep): string {
   let s = `${step.text} Cost: ${step.cost}. Time: ${step.time}.`;
   if (s.length > 600) s = `${s.slice(0, 596)}...`;
@@ -226,10 +270,12 @@ export function stepText(step: FarmStep): string {
   return s;
 }
 
+/** The first chain a protocol names, or a neutral phrase. */
 function chainOf(p: SnapshotProtocol): string {
   return p.chains.length > 0 ? p.chains[0]! : 'its main chain';
 }
 
+/** How much capital one farm position needs, from the protocol's own TVL. */
 function capitalFor(p: SnapshotProtocol): number {
   if (p.tvl_usd >= 5_000_000_000) return 250;
   if (p.tvl_usd >= 1_000_000_000) return 150;
@@ -237,6 +283,7 @@ function capitalFor(p: SnapshotProtocol): number {
   return 50;
 }
 
+/** How long to hold, from the protocol's age: younger protocols get a longer qualifying window. */
 function holdDaysFor(age: number | null): number {
   if (age === null) return 30;
   if (age < 180) return 60;
@@ -244,6 +291,7 @@ function holdDaysFor(age: number | null): number {
   return 30;
 }
 
+/** The category's one action, in the words a farmer can follow. */
 function actionFor(p: SnapshotProtocol, capital: number, chain: string): string {
   const c = (p.category ?? '').toLowerCase();
   const name = p.name;
@@ -260,6 +308,10 @@ function actionFor(p: SnapshotProtocol, capital: number, chain: string): string 
   return `Deposit $${capital} of USDC into ${name} on ${chain} and keep the position open.`;
 }
 
+/**
+ * A protocol's farm plan: six steps, each an action with a cost and a time. The plan is derived from
+ * the protocol's own record (category, chains, TVL, age), never from a hand-written list of names.
+ */
 export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = chainOf(p);
   const capital = capitalFor(p);
@@ -299,6 +351,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   ];
 }
 
+/** The live-token protocols, by market cap, for the dashboard's Live token view. */
 export function liveRows(snapshot: Snapshot): LiveRow[] {
   return snapshot.protocols
     .filter((p) => !isPreToken(p) && p.category !== 'CEX')
@@ -315,6 +368,7 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
     }));
 }
 
+/** A board row's compact form for data.js, with the farm plan generated in the page. */
 export function radarRow(row: BoardRow): RadarRow {
   return {
     rank: row.rank,
@@ -333,6 +387,7 @@ export function radarRow(row: BoardRow): RadarRow {
   };
 }
 
+/** Everything the dashboard renders, from the snapshot. */
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
   const board = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
@@ -353,6 +408,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   return { board, radar };
 }
 
+/** The snapshot out of a file's text, refused unless it is the shape the model scores. */
 export function parseSnapshot(text: string): Snapshot {
   let raw: unknown;
   try {
@@ -395,6 +451,7 @@ export function parseSnapshot(text: string): Snapshot {
   };
 }
 
+/** Why a board is not one the gate will take, or null: coverage, ranks, order, one shared implied value, and farm steps. */
 export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null {
   const slugs = new Set(board.map((r) => r.slug));
   const missing = snapshot.watchlist.filter((s) => !slugs.has(s));
@@ -414,301 +471,7 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
   return null;
 }
 
+/** A compact data.js: the dashboard's whole dataset as one script, no fetch and no network. */
 export function dataScript(radar: RadarData): string {
   return `window.RADAR=${JSON.stringify(radar)};\n`;
 }
-
-/**
- * Ecosystem Risk Assessment Model
- * Analyzes diversification across chains, categories, and TVL concentration.
- */
-export interface EcosystemRiskMetrics {
-  risk_score: number;
-  dominant_chain: string;
-  chain_concentration_pct: number;
-  total_tracked_tvl: number;
-  pre_token_liquidity_ratio: number;
-}
-
-export function computeEcosystemRisk(board: BoardRow[]): EcosystemRiskMetrics {
-  if (board.length === 0) {
-    return {
-      risk_score: 50,
-      dominant_chain: 'Unknown',
-      chain_concentration_pct: 0,
-      total_tracked_tvl: 0,
-      pre_token_liquidity_ratio: 0,
-    };
-  }
-
-  const chainTvl = new Map<string, number>();
-  let totalTvl = 0;
-
-  for (const row of board) {
-    totalTvl += row.tvl_usd;
-    const primaryChain = row.chains.length > 0 ? row.chains[0]! : 'Ethereum';
-    chainTvl.set(primaryChain, (chainTvl.get(primaryChain) ?? 0) + row.tvl_usd);
-  }
-
-  let topChain = 'Ethereum';
-  let topChainTvl = 0;
-
-  for (const [chain, tvl] of chainTvl.entries()) {
-    if (tvl > topChainTvl) {
-      topChain = chain;
-      topChainTvl = tvl;
-    }
-  }
-
-  const concentrationPct = totalTvl > 0 ? Math.round((topChainTvl / totalTvl) * 100) : 0;
-  const normalizedRisk = Math.min(100, Math.max(10, Math.round(concentrationPct * 0.7 + (board.length < 50 ? 30 : 10))));
-
-  return {
-    risk_score: normalizedRisk,
-    dominant_chain: topChain,
-    chain_concentration_pct: concentrationPct,
-    total_tracked_tvl: totalTvl,
-    pre_token_liquidity_ratio: totalTvl > 0 ? Number((topChainTvl / totalTvl).toFixed(4)) : 0,
-  };
-}
-
-/**
- * Advanced Statistical Radar Metrics
- * Derives valuation dispersion, median valuation, and watchlist ratio.
- */
-export interface RadarAnalyticalSummary {
-  mean_implied: number;
-  median_implied: number;
-  max_implied: number;
-  min_implied: number;
-  watchlist_ratio_pct: number;
-  timestamp: string;
-}
-
-export function calculateRadarMetrics(board: BoardRow[], snapshot: Snapshot): RadarAnalyticalSummary {
-  if (board.length === 0) {
-    return {
-      mean_implied: 0,
-      median_implied: 0,
-      max_implied: 0,
-      min_implied: 0,
-      watchlist_ratio_pct: 0,
-      timestamp: snapshot.as_of,
-    };
-  }
-
-  const values = board.map((r) => r.implied_value_usd).sort((a, b) => a - b);
-  const sum = values.reduce((acc, curr) => acc + curr, 0);
-  const mean = Math.round(sum / values.length);
-  const mid = Math.floor(values.length / 2);
-  const median = values.length % 2 === 0 ? Math.round((values[mid - 1]! + values[mid]!) / 2) : values[mid]!;
-
-  return {
-    mean_implied: mean,
-    median_implied: median,
-    max_implied: values[values.length - 1]!,
-    min_implied: values[0]!,
-    watchlist_ratio_pct: Math.round((snapshot.watchlist.length / board.length) * 100),
-    timestamp: snapshot.as_of,
-  };
-}
-
-/**
- * Titan Ecosystem Volatility and Momentum Engine
- * Evaluates moving 7-day velocity and standard deviation of TVL distribution across sectors.
- */
-export interface SectorMomentumAnalysis {
-  sector_name: string;
-  total_sector_tvl: number;
-  average_growth_pct: number;
-  protocol_count: number;
-  market_readiness_grade: 'A' | 'B' | 'C' | 'D';
-}
-
-export function computeSectorMomentum(board: BoardRow[]): SectorMomentumAnalysis[] {
-  const categoryMap = new Map<string, { tvl: number; growthSum: number; count: number }>();
-
-  for (const row of board) {
-    const category = row.category ?? 'Unclassified DeFi';
-    const entry = categoryMap.get(category) ?? { tvl: 0, growthSum: 0, count: 0 };
-    entry.tvl += row.tvl_usd;
-    entry.growthSum += row.change_7d ?? 0;
-    entry.count += 1;
-    categoryMap.set(category, entry);
-  }
-
-  const results: SectorMomentumAnalysis[] = [];
-  for (const [sector, stats] of categoryMap.entries()) {
-    const avgGrowth = stats.count > 0 ? Number((stats.growthSum / stats.count).toFixed(2)) : 0;
-    let grade: 'A' | 'B' | 'C' | 'D' = 'C';
-    if (avgGrowth > 20 && stats.tvl > 500_000_000) grade = 'A';
-    else if (avgGrowth > 0 || stats.tvl > 100_000_000) grade = 'B';
-    else if (avgGrowth < -20) grade = 'D';
-
-    results.push({
-      sector_name: sector,
-      total_sector_tvl: stats.tvl,
-      average_growth_pct: avgGrowth,
-      protocol_count: stats.count,
-      market_readiness_grade: grade,
-    });
-  }
-
-  return results.sort((a, b) => b.total_sector_tvl - a.total_sector_tvl);
-}
-
-/**
- * Liquidity Depth and Launch Airdrop Potential Scoring
- * Models the probability of substantial airdrop allocation based on farming intensity.
- */
-export interface AirdropPotentialScoring {
-  slug: string;
-  airdrop_alpha_score: number;
-  recommended_capital_tier: string;
-  estimated_farming_duration_days: number;
-  priority_flag: boolean;
-}
-
-export function computeAirdropPotential(row: BoardRow): AirdropPotentialScoring {
-  const baseTvl = row.tvl_usd;
-  const age = row.age_days ?? 365;
-  const growth = row.change_7d ?? 0;
-
-  let alphaScore = 50;
-  if (baseTvl >= 100_000_000) alphaScore += 25;
-  else if (baseTvl >= 10_000_000) alphaScore += 15;
-
-  if (age >= 180 && age <= 730) alphaScore += 15;
-  if (growth > 10) alphaScore += 10;
-
-  alphaScore = Math.min(100, Math.max(10, alphaScore));
-
-  let capitalTier = '$50 Micro-Farm';
-  if (baseTvl >= 1_000_000_000) capitalTier = '$250 Whale Allocation';
-  else if (baseTvl >= 100_000_000) capitalTier = '$100 Standard Farming';
-
-  return {
-    slug: row.slug,
-    airdrop_alpha_score: alphaScore,
-    recommended_capital_tier: capitalTier,
-    estimated_farming_duration_days: age < 180 ? 60 : 30,
-    priority_flag: alphaScore >= 80,
-  };
-}
-
-/**
- * Ecosystem Health and Contract Robustness Verifier
- * Audits deliverable completeness and statistical coherence.
- */
-export function verifyTitanEcosystemCoherence(board: BoardRow[]): { verified: boolean; checksum: number; message: string } {
-  let hashAccumulator = 0;
-  for (let i = 0; i < board.length; i++) {
-    hashAccumulator = (hashAccumulator + board[i]!.implied_value_usd + (i + 1)) % 1_000_000_007;
-  }
-  return {
-    verified: board.length >= 100,
-    checksum: hashAccumulator,
-    message: `Titan verification confirmed across ${board.length} pre-token protocol deliverables`,
-  };
-}
-
-/**
- * Staking and Yield Generation Analytics
- * Simulates yield generation potential under varying TVL utilization rates.
- */
-export interface StakingYieldProjection {
-  slug: string;
-  base_apr_estimate: number;
-  incentivized_apr_estimate: number;
-  lockup_duration_days: number;
-  capital_efficiency_index: number;
-}
-
-export function computeStakingYieldProjection(row: BoardRow): StakingYieldProjection {
-  const tvl = row.tvl_usd;
-  const growth = row.change_7d ?? 0;
-  let baseApr = 4.5;
-
-  if (row.category?.toLowerCase().includes('lend')) {
-    baseApr = 6.2;
-  } else if (row.category?.toLowerCase().includes('dex')) {
-    baseApr = 14.8;
-  } else if (row.category?.toLowerCase().includes('derivative')) {
-    baseApr = 18.5;
-  }
-
-  const bonusApr = growth > 0 ? Math.min(25, growth * 0.4) : 0;
-  const efficiency = tvl > 500_000_000 ? 0.92 : tvl > 50_000_000 ? 0.85 : 0.72;
-
-  return {
-    slug: row.slug,
-    base_apr_estimate: Number(baseApr.toFixed(2)),
-    incentivized_apr_estimate: Number((baseApr + bonusApr).toFixed(2)),
-    lockup_duration_days: row.age_days && row.age_days > 365 ? 90 : 30,
-    capital_efficiency_index: Number(efficiency.toFixed(2)),
-  };
-}
-
-/**
- * Cross-Chain Liquidity Routing Engine
- * Identifies optimal gateway chains for farming actions.
- */
-export interface MultiChainBridgeRouting {
-  slug: string;
-  primary_gateway_chain: string;
-  supported_chain_count: number;
-  gas_overhead_estimate_usd: number;
-  recommended_bridge_protocol: string;
-}
-
-export function analyzeBridgeRouting(row: BoardRow): MultiChainBridgeRouting {
-  const chains = row.chains;
-  const primary = chains.length > 0 ? chains[0]! : 'Ethereum';
-  let gasCost = 15.0;
-
-  if (['Solana', 'Arbitrum', 'Base', 'Polygon', 'Optimism'].includes(primary)) {
-    gasCost = 0.25;
-  } else if (primary === 'BSC' || primary === 'Avalanche') {
-    gasCost = 1.2;
-  }
-
-  return {
-    slug: row.slug,
-    primary_gateway_chain: primary,
-    supported_chain_count: chains.length,
-    gas_overhead_estimate_usd: gasCost,
-    recommended_bridge_protocol: chains.length > 1 ? 'Wormhole / Stargate' : 'Direct L1 Gateway',
-  };
-}
-
-/**
- * Governance and Tokenomics Forecast Model
- * Generates initial float, community allocation and FDV projections.
- */
-export interface TokenomicsForecast {
-  slug: string;
-  projected_circulating_supply_pct: number;
-  airdrop_pool_allocation_pct: number;
-  estimated_initial_fdv_usd: number;
-  vesting_cliff_months: number;
-}
-
-export function projectTokenomics(row: BoardRow): TokenomicsForecast {
-  const impliedVal = row.implied_value_usd;
-  const age = row.age_days ?? 365;
-
-  const airdropPct = age > 500 ? 12.5 : 8.0;
-  const initialFloat = 15.0 + (row.tvl_usd > 100_000_000 ? 5.0 : 0.0);
-  const fdvEstimate = Math.round(impliedVal * 1.15);
-
-  return {
-    slug: row.slug,
-    projected_circulating_supply_pct: initialFloat,
-    airdrop_pool_allocation_pct: airdropPct,
-    estimated_initial_fdv_usd: fdvEstimate,
-    vesting_cliff_months: age > 365 ? 6 : 12,
-  };
-}
-
-
-
